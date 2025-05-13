@@ -5,21 +5,32 @@ using Microsoft.SemanticKernel;
 
 namespace sreagent;
 
-public class CoordinatorAgent(
-    Kernel kernel,
-    ILogger<CoordinatorAgent> logger)
+public class CoordinatorAgent
 {
-    private readonly Kernel _kernel = kernel;
-    private readonly ILogger<CoordinatorAgent> _logger = logger;
+    private readonly Kernel _kernel;
+    private readonly ILogger<CoordinatorAgent> _logger;
+
+    private readonly IDictionary<string, DiagnosticAgent> _diagnosticAgents;
+
+    public CoordinatorAgent(
+        IKernelBuilder kernelBuilder, 
+        IDictionary<string, DiagnosticAgent> diagnosticAgents,
+        ILogger<CoordinatorAgent> logger)
+    {
+        _logger = logger;
+        _kernel = kernelBuilder.Build();
+        _diagnosticAgents = diagnosticAgents;
+    }
 
     public async Task<string> ProcessUserInputAsync(string userInput, ConversationState conversationState)
     {
         _logger.LogInformation("Processing user input: {UserInput}", userInput);
 
         // Determine the next action using the coordinator prompt
-        var coordinatorPrompt = @"
-You are a coordinator for an Azure support system. Your job is to:
-1. Understand the user's problem with their Azure application
+        var coordinatorPrompt = """
+<message role="system">        
+You are a coordinator for an Azure Container Apps SRE agent. Your job is to:
+1. Understand the user's problem with their Azur Container app
 2. Determine which specialized diagnostic agent to use
 3. Gather required information from the user
 4. Route the conversation to the appropriate specialist agent
@@ -27,16 +38,17 @@ You are a coordinator for an Azure support system. Your job is to:
 Current conversation state:
 {{$conversationState}}
 
-User query: {{$userInput}}
-
 Determine the next action:
 - If you need more information, ask the user specific questions
 - If ready to diagnose, respond with a JSON classification: {""action"": ""diagnose"", ""category"": ""[category]""}
 - If already diagnosed and ready to mitigate, respond with: {""action"": ""mitigate"", ""category"": ""[category]""}
 
-Available diagnostic categories: networking, database, authentication, performance, web_app_down
-
-Response:";
+Available diagnostic categories: networking, availability
+</message>
+<message role="user">
+{{$userInput}}
+</message>
+""";
 
         // Set execution settings
         var executionSettings = new PromptExecutionSettings
@@ -79,12 +91,11 @@ Response:";
                         if (action == "diagnose")
                         {
                             // Route to appropriate diagnostic agent
-                            //var diagnosticAgent = _diagnosticAgentFactory.GetAgent(category);
+                            var diagnosticAgent = _diagnosticAgents[category];
                             conversationState.SetCurrentPhase("diagnosis");
                             conversationState.SetCurrentCategory(category);
 
-                            return "Diagnosing issue in " + category + " category...";
-                            //return await diagnosticAgent.DiagnoseAsync(userInput, conversationState);
+                            return await diagnosticAgent.DiagnoseAsync(userInput, conversationState);
                         }
                         else if (action == "mitigate")
                         {

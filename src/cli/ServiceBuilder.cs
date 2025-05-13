@@ -31,7 +31,7 @@ public static class ServicBuilder
 
     public static IServiceCollection AddSemanticKernelChatCompletion(this IServiceCollection serviceCollection)
     {
-        _ = serviceCollection.AddSingleton(sp =>
+        _ = serviceCollection.AddSingleton<IKernelBuilder>(sp =>
         {
             AzureOpenAISettings settings = sp.GetRequiredService<IOptions<AzureOpenAISettings>>().Value;
 
@@ -43,13 +43,12 @@ public static class ServicBuilder
             kernelBuilder.Services.AddLogging(configure => configure.AddConsole());
             kernelBuilder.Services.AddLogging(configure => configure.SetMinimumLevel(LogLevel.Information));
 
-            var kernel = kernelBuilder.AddAzureOpenAIChatCompletion(
+            kernelBuilder.AddAzureOpenAIChatCompletion(
                 deploymentName: settings.DeploymentName,
                 endpoint: settings.Endpoint,
-                apiKey: settings.ApiKey)
-            .Build();
+                apiKey: settings.ApiKey);
 
-            return kernel;
+            return kernelBuilder;
         });
 
         return serviceCollection;
