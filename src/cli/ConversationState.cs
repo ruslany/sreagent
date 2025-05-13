@@ -4,8 +4,8 @@ public class ConversationState
 {
     private List<Message> _messages = new List<Message>();
     private string _currentPhase = "initial";
-    private string _currentCategory = null;
-    private string _diagnosisResult = null;
+    private string? _currentCategory = null;
+    private string? _diagnosisResult = null;
 
     public void AddUserMessage(string content)
     {

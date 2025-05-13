@@ -1,66 +1,77 @@
-using Microsoft.SemanticKernel.Memory;
+using Microsoft.Extensions.Logging;
 
 namespace sreagent;
 
 public class AgentMemory
 {
-#pragma warning disable SKEXP0001 // Type is for evaluation purposes only and is subject to change or removal in future updates. Suppress this diagnostic to proceed.
-    private IMemoryStore _memoryStore;
-#pragma warning restore SKEXP0001 // Type is for evaluation purposes only and is subject to change or removal in future updates. Suppress this diagnostic to proceed.
-    private Dictionary<string, List<string>> _troubleshootingPatterns;
+    private readonly Dictionary<string, List<string>> _troubleshootingPatterns;
+    private readonly ILogger<AgentMemory> _logger;
 
-    public async Task InitializeAsync()
+    public AgentMemory(ILogger<AgentMemory> logger)
     {
-        // Initialize memory store for semantic search
-        _memoryStore = new VolatileMemoryStore();
-
-        // Load troubleshooting patterns
-        await LoadTroubleshootingPatternsAsync();
+        _logger = logger;
+        _troubleshootingPatterns = InitializeTroubleshootingPatterns();
     }
 
-    private async Task LoadTroubleshootingPatternsAsync()
+    private Dictionary<string, List<string>> InitializeTroubleshootingPatterns()
     {
-        // In a real implementation, this would load from a database or file
-        _troubleshootingPatterns = new Dictionary<string, List<string>>
+        // In a real implementation, these patterns could be loaded from a database or file
+        return new Dictionary<string, List<string>>
         {
             ["networking"] = new List<string>
                 {
                     "If application can't connect to database, check NSG rules between app subnet and database subnet",
                     "If web application is unreachable, verify NSG allows port 80/443 inbound",
-                    // More patterns
+                    "If services in different VNets can't communicate, check VNet peering or service endpoints",
+                    "If experiencing intermittent connectivity issues, check DNS resolution and network latency",
+                    "If load balancer endpoints are not responding, verify health probe configuration",
+                    "If application gateway returns 502 errors, check backend pool health and settings"
                 },
             ["database"] = new List<string>
-                {
-                    "If SQL queries are timing out, check DTU usage and consider scaling up",
-                    "If connection pooling errors occur, verify max pool settings in connection string",
-                    // More patterns
-                }
-            // More categories
+                { "If SQL queries are timing out, check DTU usage and consider scaling up",
+                   "If connection pooling errors occur, verify max pool settings in connection string",
+                   "If database is unreachable, check firewall rules to ensure client IP is allowed",
+                   "If experiencing deadlocks, review transaction isolation levels and query patterns",
+                   "If seeing high wait times, check for blocking queries or resource contention",
+                   "If database size is approaching limit, consider implementing data archiving strategy"
+               },
+            ["authentication"] = new List<string>
+               {
+                   "If seeing 401 Unauthorized errors, verify token acquisition and validity",
+                   "If CORS errors appear in browser console, check CORS configuration in Azure",
+                   "If managed identity isn't working, verify service principal assignments",
+                   "If users can't access resources, check RBAC permissions at subscription and resource levels",
+                   "If token acquisition fails, verify app registration and API permissions",
+                   "If certificate authentication fails, check certificate validity and trust chain"
+               },
+            ["performance"] = new List<string>
+               {
+                   "If web app is slow, check App Service plan tier and scaling settings",
+                   "If seeing high memory usage, look for memory leaks or inefficient caching",
+                   "If CPU spikes occur, identify resource-intensive operations and optimize",
+                   "If storage operations are slow, check throttling metrics and partition strategy",
+                   "If application startup is slow, review initialization logic and dependencies",
+                   "If experiencing timeouts, check connection limits and timeout configurations"
+               }
         };
-
-        // Index patterns for semantic search
-        foreach (var category in _troubleshootingPatterns.Keys)
-        {
-            foreach (var pattern in _troubleshootingPatterns[category])
-            {
-                // In a real implementation, add to semantic memory
-                // await _memoryStore.SaveAsync(category, pattern);
-            }
-        }
     }
 
-    public async Task<List<string>> SearchPatternsAsync(string query, string category = null)
+    public Task<List<string>> SearchPatternsAsync(string category)
     {
-        // In a real implementation, this would perform semantic search
-        // For simplicity, just return patterns for the category
-        if (category != null && _troubleshootingPatterns.ContainsKey(category))
-            return _troubleshootingPatterns[category];
+        _logger.LogInformation("Searching patterns for category: {Category}", category);
 
-        // If no category specified, return all patterns
-        var allPatterns = new List<string>();
-        foreach (var patterns in _troubleshootingPatterns.Values)
-            allPatterns.AddRange(patterns);
+        if (_troubleshootingPatterns.TryGetValue(category, out var patterns))
+        {
+            return Task.FromResult(patterns);
+        }
 
-        return allPatterns;
+        return Task.FromResult(new List<string>());
+    }
+
+    public Task<List<string>> SearchPatternsAsync(string query, string category)
+    {
+        // In a real implementation, this would perform semantic search on the patterns
+        // For now, just return all patterns for the category
+        return SearchPatternsAsync(category);
     }
 }

@@ -1,48 +1,38 @@
-using Microsoft.SemanticKernel;
+using System.Text.Json;
+using Microsoft.Extensions.AI;
+using Microsoft.Extensions.Logging;
 
 namespace sreagent;
 
-public class CoordinatorAgent
+public class CoordinatorAgent(
+    IChatClient chatClient,
+    DiagnosticAgentFactory diagnosticAgentFactory,
+    MitigationAgentFactory mitigationAgentFactory,
+    AgentMemory memory,
+    ILogger<CoordinatorAgent> logger)
 {
-    private Kernel _kernel;
-    private Dictionary<string, DiagnosticAgent> _diagnosticAgents;
-    private Dictionary<string, MitigationAgent> _mitigationAgents;
-    private AgentMemory _memory;
-    private ConversationState _conversationState;
+    private readonly IChatClient _chatClient = chatClient;
+    private readonly DiagnosticAgentFactory _diagnosticAgentFactory = diagnosticAgentFactory;
+    private readonly MitigationAgentFactory _mitigationAgentFactory = mitigationAgentFactory;
+    private readonly AgentMemory _memory = memory;
+    private readonly ILogger<CoordinatorAgent> _logger = logger;
 
-    public CoordinatorAgent(
-        Dictionary<string, DiagnosticAgent> diagnosticAgents,
-        Dictionary<string, MitigationAgent> mitigationAgents,
-        AgentMemory memory)
+    public async Task<string> ProcessUserInputAsync(string userInput, ConversationState conversationState)
     {
-        _diagnosticAgents = diagnosticAgents;
-        _mitigationAgents = mitigationAgents;
-        _memory = memory;
-        _conversationState = new ConversationState();
-    }
+        _logger.LogInformation("Processing user input: {UserInput}", userInput);
 
-    public async Task InitializeAsync()
-    {
-        // Setup kernel with minimal tools needed for coordination
-        _kernel = new KernelBuilder()
-            .WithAzureOpenAIChatCompletionService(
-                "gpt-4-turbo",
-                "YOUR_AZURE_ENDPOINT",
-                "YOUR_AZURE_API_KEY")
-            .Build();
-
-        // Add coordinator prompt and basic tools
-        var promptConfig = new PromptTemplateConfig
-        {
-            Template = @"
+        // Determine the next action using the coordinator prompt
+        var coordinatorPrompt = @"
 You are a coordinator for an Azure support system. Your job is to:
 1. Understand the user's problem with their Azure application
 2. Determine which specialized diagnostic agent to use
 3. Gather required information from the user
 4. Route the conversation to the appropriate specialist agent
 
-Current conversation state: {{$conversationState}}
-User query: {{$input}}
+Current conversation state:
+{{$conversationState}}
+
+User query: {{$userInput}}
 
 Determine the next action:
 - If you need more information, ask the user specific questions
@@ -51,85 +41,105 @@ Determine the next action:
 
 Available diagnostic categories: networking, database, authentication, performance
 
-Response:",
-            InputVariables = new List<string> { "input", "conversationState" }
+Response:";
+
+        var promptOptions = new ChatOptions
+        {
+            ModelId = "gpt-4o",
+            Temperature = (float?)0.2,
+            MaxOutputTokens = 2000
         };
 
-        // Add the prompt to the kernel
-        var coordinatorFunction = _kernel.CreateFunctionFromPrompt(promptConfig);
-
-        // Register the function
-        _kernel.Functions.AddFunction("Coordinator", coordinatorFunction);
-    }
-
-    public async Task<string> ProcessUserInputAsync(string userInput)
-    {
-        try
+        var parameters = new Dictionary<string, string>
         {
-            // Add the user's input to conversation state
-            _conversationState.AddUserMessage(userInput);
+            ["conversationState"] = conversationState.GetFormattedState(),
+            ["userInput"] = userInput
+        };
 
-            // Get coordinator's response
-            var arguments = new KernelArguments
+        var coordinatorResponse = await _chatClient.GetResponseAsync(
+            ProcessPromptParameters(coordinatorPrompt, parameters),
+            promptOptions);
+
+        string response = coordinatorResponse.Text;
+
+        // Check if we need to route to a specialist agent
+        if (response.Contains("\"action\"") && response.Contains("\"category\""))
+        {
+            try
             {
-                ["input"] = userInput,
-                ["conversationState"] = _conversationState.GetFormattedState()
-            };
+                var routingInfo = ExtractRoutingInfo(response);
 
-            var result = await _kernel.InvokeAsync("Coordinator", arguments);
-            string coordinatorResponse = result.GetValue<string>();
-
-            // Check if we need to route to a specialist agent
-            if (coordinatorResponse.Contains("\"action\""))
-            {
-                // Parse the JSON response (simplified for example)
-                // In real code, use JsonSerializer to parse properly
-                string action = ExtractJsonValue(coordinatorResponse, "action");
-                string category = ExtractJsonValue(coordinatorResponse, "category");
-
-                if (action == "diagnose")
+                if (routingInfo != null)
                 {
-                    // Route to appropriate diagnostic agent
-                    if (_diagnosticAgents.TryGetValue(category, out var agent))
+                    string action = routingInfo.Action;
+                    string category = routingInfo.Category;
+
+                    _logger.LogInformation("Routing to {Action} agent for {Category}", action, category);
+
+                    if (action == "diagnose")
                     {
-                        _conversationState.SetCurrentPhase("diagnosis");
-                        _conversationState.SetCurrentCategory(category);
-                        return await agent.DiagnoseAsync(userInput, _conversationState);
+                        // Route to appropriate diagnostic agent
+                        var diagnosticAgent = _diagnosticAgentFactory.GetAgent(category);
+                        conversationState.SetCurrentPhase("diagnosis");
+                        conversationState.SetCurrentCategory(category);
+
+                        return await diagnosticAgent.DiagnoseAsync(userInput, conversationState);
                     }
-                }
-                else if (action == "mitigate")
-                {
-                    // Route to appropriate mitigation agent
-                    if (_mitigationAgents.TryGetValue(category, out var agent))
+                    else if (action == "mitigate")
                     {
-                        _conversationState.SetCurrentPhase("mitigation");
-                        return await agent.MitigateAsync(userInput, _conversationState);
+                        // Route to appropriate mitigation agent
+                        var mitigationAgent = _mitigationAgentFactory.GetAgent(category);
+                        conversationState.SetCurrentPhase("mitigation");
+
+                        return await mitigationAgent.MitigateAsync(userInput, conversationState);
                     }
                 }
             }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error parsing routing information");
+            }
+        }
 
-            // If no routing needed, return coordinator's response
-            _conversationState.AddAgentMessage(coordinatorResponse);
-            return coordinatorResponse;
+        // If no routing is needed or if routing failed, return the coordinator response
+        return response;
+    }
+
+    private RoutingInfo? ExtractRoutingInfo(string response)
+    {
+        try
+        {
+            // Find JSON object in the response
+            int startIndex = response.IndexOf('{');
+            int endIndex = response.LastIndexOf('}');
+
+            if (startIndex >= 0 && endIndex > startIndex)
+            {
+                string jsonStr = response.Substring(startIndex, endIndex - startIndex + 1);
+                var routingInfo = JsonSerializer.Deserialize<RoutingInfo>(jsonStr);
+                return routingInfo;
+            }
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"Error processing input: {ex.Message}");
-            return "I encountered an error processing your request. Could you please try rephrasing or provide more details?";
+            _logger.LogError(ex, "Failed to parse routing JSON");
         }
+
+        return null;
     }
 
-    // Simplified JSON value extraction (use proper JSON parsing in production)
-    private string ExtractJsonValue(string json, string key)
+    private string ProcessPromptParameters(string prompt, Dictionary<string, string> parameters)
     {
-        // Very simplified - use System.Text.Json in real code
-        int keyIndex = json.IndexOf($"\"{key}\":");
-        if (keyIndex >= 0)
+        foreach (var kvp in parameters)
         {
-            int valueStart = json.IndexOf("\"", keyIndex + key.Length + 3) + 1;
-            int valueEnd = json.IndexOf("\"", valueStart);
-            return json.Substring(valueStart, valueEnd - valueStart);
+            prompt = prompt.Replace($"{{$kvp.Key}}", kvp.Value);
         }
-        return string.Empty;
+        return prompt;
+    }
+
+    private class RoutingInfo
+    {
+        public required string Action { get; set; }
+        public required string Category { get; set; }
     }
 }
