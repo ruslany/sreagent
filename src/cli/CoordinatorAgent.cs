@@ -1,31 +1,16 @@
 using System.Text.Json;
-using Microsoft.SemanticKernel.ChatCompletion;
+using System.Text.Json.Serialization;
 using Microsoft.Extensions.Logging;
 using Microsoft.SemanticKernel;
 
 namespace sreagent;
 
-public class CoordinatorAgent
+public class CoordinatorAgent(
+    Kernel kernel,
+    ILogger<CoordinatorAgent> logger)
 {
-    private readonly Kernel _kernel;
-    private readonly DiagnosticAgentFactory _diagnosticAgentFactory;
-    private readonly MitigationAgentFactory _mitigationAgentFactory;
-    private readonly AgentMemory _memory;
-    private readonly ILogger<CoordinatorAgent> _logger;
-
-    public CoordinatorAgent(
-        Kernel kernel,
-        DiagnosticAgentFactory diagnosticAgentFactory,
-        MitigationAgentFactory mitigationAgentFactory,
-        AgentMemory memory,
-        ILogger<CoordinatorAgent> logger)
-    {
-        _kernel = kernel;
-        _diagnosticAgentFactory = diagnosticAgentFactory;
-        _mitigationAgentFactory = mitigationAgentFactory;
-        _memory = memory;
-        _logger = logger;
-    }
+    private readonly Kernel _kernel = kernel;
+    private readonly ILogger<CoordinatorAgent> _logger = logger;
 
     public async Task<string> ProcessUserInputAsync(string userInput, ConversationState conversationState)
     {
@@ -60,7 +45,7 @@ Response:";
             FunctionChoiceBehavior = FunctionChoiceBehavior.None()
         };
 
-        var arguments = new KernelArguments
+        var arguments = new KernelArguments(executionSettings)
         {
             { "userInput", userInput },
             { "conversationState", conversationState.GetFormattedState() }
@@ -92,19 +77,21 @@ Response:";
                         if (action == "diagnose")
                         {
                             // Route to appropriate diagnostic agent
-                            var diagnosticAgent = _diagnosticAgentFactory.GetAgent(category);
+                            //var diagnosticAgent = _diagnosticAgentFactory.GetAgent(category);
                             conversationState.SetCurrentPhase("diagnosis");
                             conversationState.SetCurrentCategory(category);
 
-                            return await diagnosticAgent.DiagnoseAsync(userInput, conversationState);
+                            return "Diagnosing issue in " + category + " category...";
+                            //return await diagnosticAgent.DiagnoseAsync(userInput, conversationState);
                         }
                         else if (action == "mitigate")
                         {
                             // Route to appropriate mitigation agent
-                            var mitigationAgent = _mitigationAgentFactory.GetAgent(category);
+                            //var mitigationAgent = _mitigationAgentFactory.GetAgent(category);
                             conversationState.SetCurrentPhase("mitigation");
 
-                            return await mitigationAgent.MitigateAsync(userInput, conversationState);
+                            return "Mitigating issue in " + category + " category...";
+                            //return await mitigationAgent.MitigateAsync(userInput, conversationState);
                         }
                     }
                 }
@@ -128,6 +115,8 @@ Response:";
     {
         try
         {
+            Console.WriteLine($"Raw response: {response}");
+
             // Find JSON object in the response
             int startIndex = response.IndexOf('{');
             int endIndex = response.LastIndexOf('}');
@@ -147,18 +136,7 @@ Response:";
         return null;
     }
 
-    private string ProcessPromptParameters(string prompt, Dictionary<string, string> parameters)
-    {
-        foreach (var kvp in parameters)
-        {
-            prompt = prompt.Replace($"{{${kvp.Key}}}", kvp.Value);
-        }
-        return prompt;
-    }
-
-    private class RoutingInfo
-    {
-        public required string Action { get; set; }
-        public required string Category { get; set; }
-    }
+    private record RoutingInfo(
+        [property: JsonPropertyName("action")] string Action,
+        [property: JsonPropertyName("category")] string Category);
 }

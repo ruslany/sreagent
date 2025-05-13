@@ -1,13 +1,26 @@
-﻿using sreagent;
+﻿using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
+using sreagent;
 
-public class Program
-    {
-        static async Task Main(string[] args)
-        {
-            var agentSystem = new AgentSystem();
-            await agentSystem.InitializeAsync();
-            
-            // Start conversation with user
-            await agentSystem.StartConversationAsync();
-        }
-    }
+var config = new ConfigurationBuilder()
+    .AddConfigurationSources()
+    .Build();
+
+var serviceCollection = new ServiceCollection()
+    .AddLogging(configure => configure.AddConsole())
+    .AddSingleton<IConfiguration>(config)
+    .AddAzureOpenAIOptions(config)
+    .AddSemanticKernelChatCompletion()
+    .AddSingleton<CoordinatorAgent>()
+    .AddSingleton<ConversationService>();
+
+var serviceProvider = serviceCollection.BuildServiceProvider();
+
+var conversationService = serviceProvider.GetRequiredService<ConversationService>();
+
+await conversationService.StartConversationAsync();
+
+Console.WriteLine("\nPress any key to exit...");
+
+Console.ReadLine();

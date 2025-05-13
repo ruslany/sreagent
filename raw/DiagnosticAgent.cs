@@ -1,17 +1,17 @@
-using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Logging;
+using Microsoft.SemanticKernel;
 
 namespace sreagent;
 
 public class DiagnosticAgent(
     string specialization,
-    IChatClient chatClient,
+    Kernel kernel,
     List<ITool> tools,
     AgentMemory memory,
     ILogger<DiagnosticAgent> logger)
 {
     private readonly string _specialization = specialization;
-    private readonly IChatClient _chatClient = chatClient;
+    private readonly Kernel _kernel = kernel;
     private readonly List<ITool> _tools = tools;
     private readonly AgentMemory _memory = memory;
     private readonly ILogger<DiagnosticAgent> _logger = logger;
@@ -24,66 +24,32 @@ public class DiagnosticAgent(
         var patterns = await _memory.SearchPatternsAsync(_specialization);
         string patternsText = string.Join("\n", patterns.Select(p => $"- {p}"));
 
-        // Get available tools
-        string toolsText = string.Join("\n", _tools.Select(t => $"- {t.Name}: {t.Description}"));
+        // Register tools as plugin functions
+        RegisterToolsAsPlugins();
 
         // Build the specialized prompt
-        string prompt = GetSpecializedPrompt(patternsText, toolsText);
+        string prompt = GetSpecializedPrompt(patternsText);
 
-        var chatOptions = new ChatOptions
+        // Set execution settings with automatic function invocation
+        var executionSettings = new PromptExecutionSettings
         {
             ModelId = "gpt-4o",
-            Temperature = (float?)0.2,
-            MaxOutputTokens = 1500
+            // Enable automatic function invocation
+            FunctionChoiceBehavior = FunctionChoiceBehavior.Auto()
         };
 
-        var parameters = new Dictionary<string, string>
+        var arguments = new KernelArguments(executionSettings)
         {
-            ["conversationState"] = conversationState.GetFormattedState(),
-            ["userInput"] = userInput,
-            ["toolResults"] = string.Empty
+            { "conversationState", conversationState.GetFormattedState() },
+            { "userInput", userInput }
         };
 
-        // First pass: determine if we need to use any tools
-        var initialResponse = await _chatClient.GetResponseAsync(
+        // Invoke the LLM with automatic function calling
+        var result = await _kernel.InvokePromptAsync(
             prompt,
-            chatOptions);
+            arguments);
 
-        string response = initialResponse.Text;
-
-        // Check if the agent wants to use a tool
-        if (response.Contains("USE_TOOL:"))
-        {
-            _logger.LogInformation("Diagnostic agent wants to use a tool");
-
-            // Parse the tool request
-            string? toolRequestLine = response.Split("\n")
-                .FirstOrDefault(line => line.StartsWith("USE_TOOL:"));
-
-            if (toolRequestLine != null)
-            {
-                string[] parts = toolRequestLine.Substring("USE_TOOL:".Length).Trim().Split(' ', 2);
-
-                if (parts.Length >= 1)
-                {
-                    string toolName = parts[0];
-                    string toolArgs = parts.Length > 1 ? parts[1] : string.Empty;
-
-                    // Execute the tool
-                    string toolResult = await ExecuteToolAsync(toolName, toolArgs);
-
-                    // Update the prompt with tool results and get final response
-                    parameters["toolResults"] = toolResult;
-
-                    var finalResponse = await _promptService.ExecutePromptAsync(
-                        prompt,
-                        parameters,
-                        promptOptions);
-
-                    response = finalResponse.Completion;
-                }
-            }
-        }
+        string response = result.ToString();
 
         // Check if we've identified the issue
         if (response.Contains("DIAGNOSIS:"))
@@ -104,7 +70,29 @@ public class DiagnosticAgent(
         return response;
     }
 
-    private string GetSpecializedPrompt(string patterns, string tools)
+    private void RegisterToolsAsPlugins()
+    {
+        // If tools are already registered, skip registration
+        if (_kernel.Plugins.Any(p => p.Name == "DiagnosticTools"))
+        {
+            return;
+        }
+
+        // Create plugin function for each tool
+        foreach (var tool in _tools)
+        {
+            // Create a function for this tool
+            KernelFunction function = KernelFunction.CreateFromMethod(
+                async (string arguments) => await ExecuteToolAsync(tool.Name, arguments),
+                tool.Name,
+                tool.Description);
+
+            // Add the function to the kernel
+            _kernel.Plugins.Add(function, "DiagnosticTools");
+        }
+    }
+
+    private string GetSpecializedPrompt(string patterns)
     {
         switch (_specialization)
         {
@@ -117,13 +105,8 @@ Current conversation state:
 
 User query: {{$userInput}}
 
-Tool results: {{$toolResults}}
-
 Common Azure networking troubleshooting patterns:
-{patterns}
-
-Available tools:
-{tools}
+{{$patterns}}
 
 Focus on these common networking issues:
 1. NSG rules blocking traffic
@@ -134,8 +117,7 @@ Focus on these common networking issues:
 6. Public IP and private IP address issues
 
 If you need more information, ask the user specific questions.
-If you need to run a diagnostic tool, respond with a line starting with USE_TOOL: followed by the tool name and arguments.
-Example: USE_TOOL: CheckNsgRules resource-group-name nsg-name
+If you need to run a diagnostic tool, use the appropriate function.
 
 If you've identified the issue, respond with a line starting with DIAGNOSIS: followed by a brief description of the issue.
 Example: DIAGNOSIS: NSG rule blocking port 443 traffic to the web tier
@@ -153,13 +135,8 @@ Current conversation state:
 
 User query: {{$userInput}}
 
-Tool results: {{$toolResults}}
-
 Common Azure database troubleshooting patterns:
-{patterns}
-
-Available tools:
-{tools}
+{{$patterns}}
 
 Focus on these common database issues:
 1. Connection string problems
@@ -170,8 +147,7 @@ Focus on these common database issues:
 6. Authentication and permission issues
 
 If you need more information, ask the user specific questions.
-If you need to run a diagnostic tool, respond with a line starting with USE_TOOL: followed by the tool name and arguments.
-Example: USE_TOOL: CheckDatabaseConnectivity server-name database-name
+If you need to run a diagnostic tool, use the appropriate function.
 
 If you've identified the issue, respond with a line starting with DIAGNOSIS: followed by a brief description of the issue.
 Example: DIAGNOSIS: Database CPU utilization at 100% causing query timeouts
@@ -189,13 +165,8 @@ Current conversation state:
 
 User query: {{$userInput}}
 
-Tool results: {{$toolResults}}
-
 Common Azure authentication troubleshooting patterns:
-{patterns}
-
-Available tools:
-{tools}
+{{$patterns}}
 
 Focus on these common authentication issues:
 1. Azure AD integration problems
@@ -206,8 +177,7 @@ Focus on these common authentication issues:
 6. RBAC permission issues
 
 If you need more information, ask the user specific questions.
-If you need to run a diagnostic tool, respond with a line starting with USE_TOOL: followed by the tool name and arguments.
-Example: USE_TOOL: CheckServicePrincipal app-id
+If you need to run a diagnostic tool, use the appropriate function.
 
 If you've identified the issue, respond with a line starting with DIAGNOSIS: followed by a brief description of the issue.
 Example: DIAGNOSIS: Service principal missing required permissions for Key Vault access
@@ -225,13 +195,8 @@ Current conversation state:
 
 User query: {{$userInput}}
 
-Tool results: {{$toolResults}}
-
 Common Azure performance troubleshooting patterns:
-{patterns}
-
-Available tools:
-{tools}
+{{$patterns}}
 
 Focus on these common performance issues:
 1. App Service plan scaling and limitations
@@ -242,8 +207,7 @@ Focus on these common performance issues:
 6. Resource contention
 
 If you need more information, ask the user specific questions.
-If you need to run a diagnostic tool, respond with a line starting with USE_TOOL: followed by the tool name and arguments.
-Example: USE_TOOL: CheckAppServiceMetrics resource-group-name app-service-name
+If you need to run a diagnostic tool, use the appropriate function.
 
 If you've identified the issue, respond with a line starting with DIAGNOSIS: followed by a brief description of the issue.
 Example: DIAGNOSIS: App Service hitting memory limits causing frequent application restarts
@@ -261,17 +225,11 @@ Current conversation state:
 
 User query: {{$userInput}}
 
-Tool results: {{$toolResults}}
-
 Common Azure troubleshooting patterns:
-{patterns}
-
-Available tools:
-{tools}
+{{$patterns}}
 
 If you need more information, ask the user specific questions.
-If you need to run a diagnostic tool, respond with a line starting with USE_TOOL: followed by the tool name and arguments.
-Example: USE_TOOL: ToolName arg1 arg2
+If you need to run a diagnostic tool, use the appropriate function.
 
 If you've identified the issue, respond with a line starting with DIAGNOSIS: followed by a brief description of the issue.
 Example: DIAGNOSIS: Brief description of the issue
