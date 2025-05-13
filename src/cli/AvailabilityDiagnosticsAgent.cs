@@ -13,9 +13,9 @@ public class AvailabilityDiagnosticAgent : DiagnosticAgent
         AcaAvailabilityPluginDefinition acaAvailabilityPluginDefinition,
         ILogger<NetworkingDiagnosticAgent> logger)
         : base(logger)
-    {
-        kernelBuilder.Plugins.AddFromObject(acaAvailabilityPluginDefinition);
+    {        
         _kernel = kernelBuilder.Build();
+        _kernel.Plugins.AddFromObject(acaAvailabilityPluginDefinition);
     }
 
     public override Kernel KernelWithTools => _kernel;
@@ -30,9 +30,6 @@ You are a specialized Azure Container Apps availability diagnostic agent. Your j
 
 Current conversation state:
 {{$conversationState}}
-
-Common Azure Container Apps availability troubleshooting patterns:
-{{$patterns}}
 
 Focus on these common availability issues:
 1. High CPU or memory usage makes the app unresponsive

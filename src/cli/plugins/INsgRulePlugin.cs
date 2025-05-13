@@ -2,7 +2,7 @@ using Azure.ResourceManager.Network;
 
 namespace sreagent.plugins;
 
-public interface INSGRulePlugin
+public interface INsgRulePlugin
 {
     Task<IDictionary<string, IReadOnlyList<SecurityRuleData>>> GetNSGRulesAsync(string nsgResourceId);
 

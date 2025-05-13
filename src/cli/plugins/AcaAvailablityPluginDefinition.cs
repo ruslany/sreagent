@@ -55,7 +55,7 @@ public class AcaAvailabilityPluginDefinition
 
     #endregion
 
-
+    [KernelFunction("get_containerapp_logs")]
     [Description("Get the logs of the latest revision of a Container App instance.")]
     public async Task<string> GetContainerAppLogsAsync(
         [Description("The resource ID of the Container App instance.")]

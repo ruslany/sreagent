@@ -8,10 +8,10 @@ using Microsoft.SemanticKernel;
 
 namespace sreagent.plugins;
 
-public class NSGRulePluginDefinition
+public class NsgRulePluginDefinition
 {
-    private readonly INSGRulePlugin _nsgRulePlugin;
-    public NSGRulePluginDefinition(INSGRulePlugin nsgRulePlugin)
+    private readonly INsgRulePlugin _nsgRulePlugin;
+    public NsgRulePluginDefinition(INsgRulePlugin nsgRulePlugin)
     {
         _nsgRulePlugin = nsgRulePlugin;
     }

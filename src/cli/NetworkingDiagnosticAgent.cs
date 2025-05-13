@@ -10,12 +10,12 @@ public class NetworkingDiagnosticAgent : DiagnosticAgent
 
     public NetworkingDiagnosticAgent(
         IKernelBuilder kernelBuilder,
-        NSGRulePluginDefinition nsgRulePluginDefinition,
+        NsgRulePluginDefinition nsgRulePluginDefinition,
         ILogger<NetworkingDiagnosticAgent> logger)
         : base(logger)
     {
-        kernelBuilder.Plugins.AddFromObject(nsgRulePluginDefinition);
         _kernel = kernelBuilder.Build();
+        _kernel.Plugins.AddFromObject(nsgRulePluginDefinition);
     }
 
     public override Kernel KernelWithTools => _kernel;

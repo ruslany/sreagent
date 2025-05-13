@@ -3,6 +3,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using Microsoft.SemanticKernel;
+using sreagent.plugins;
 
 namespace sreagent;
 
@@ -49,6 +50,36 @@ public static class ServicBuilder
                 apiKey: settings.ApiKey);
 
             return kernelBuilder;
+        });
+
+        return serviceCollection;
+    }
+
+    public static IServiceCollection AddPlugins(this IServiceCollection serviceCollection)
+    {
+        _ = serviceCollection.AddSingleton<IAcaAvailabilityPlugin, AcaAvailabilityPlugin>();
+        _ = serviceCollection.AddSingleton<AcaAvailabilityPluginDefinition>();
+        _ = serviceCollection.AddSingleton<INsgRulePlugin, NsgRulePlugin>();
+        _ = serviceCollection.AddSingleton<NsgRulePluginDefinition>();
+
+        return serviceCollection;
+    }
+
+    public static IServiceCollection AddAgents(this IServiceCollection serviceCollection)
+    {
+        _ = serviceCollection.AddSingleton<CoordinatorAgent>();
+        _ = serviceCollection.AddSingleton<AvailabilityDiagnosticAgent>();
+        _ = serviceCollection.AddSingleton<NetworkingDiagnosticAgent>();
+
+        _ = serviceCollection.AddSingleton<IDictionary<string, DiagnosticAgent>>(sp =>
+        {
+            var agents = new Dictionary<string, DiagnosticAgent>
+            {
+                { "availability", sp.GetRequiredService<AvailabilityDiagnosticAgent>() },
+                { "networking", sp.GetRequiredService<NetworkingDiagnosticAgent>() }
+            };
+
+            return agents;
         });
 
         return serviceCollection;

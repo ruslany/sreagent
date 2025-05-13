@@ -15,6 +15,11 @@ var serviceCollection = new ServiceCollection()
     .AddSingleton<CoordinatorAgent>()
     .AddSingleton<ConversationService>();
 
+serviceCollection.AddPlugins();
+serviceCollection.AddAgents();
+
+serviceCollection.AddSingleton<ConversationService>();
+
 var serviceProvider = serviceCollection.BuildServiceProvider();
 
 var conversationService = serviceProvider.GetRequiredService<ConversationService>();

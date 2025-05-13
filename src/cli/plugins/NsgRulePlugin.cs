@@ -7,13 +7,13 @@ using Microsoft.Extensions.Logging;
 
 namespace sreagent.plugins;
 
-public class NSGRulePlugin : INSGRulePlugin
+public class NsgRulePlugin : INsgRulePlugin
 {
-    private readonly ILogger<NSGRulePlugin> _logger;
+    private readonly ILogger<NsgRulePlugin> _logger;
 
     private readonly ArmClient _armClient;
 
-    public NSGRulePlugin(ILogger<NSGRulePlugin> logger)
+    public NsgRulePlugin(ILogger<NsgRulePlugin> logger)
     {
         _logger = logger;
 
