@@ -34,7 +34,7 @@ Determine the next action:
 - If ready to diagnose, respond with a JSON classification: {""action"": ""diagnose"", ""category"": ""[category]""}
 - If already diagnosed and ready to mitigate, respond with: {""action"": ""mitigate"", ""category"": ""[category]""}
 
-Available diagnostic categories: networking, database, authentication, performance
+Available diagnostic categories: networking, database, authentication, performance, web_app_down
 
 Response:";
 
@@ -50,6 +50,8 @@ Response:";
             { "userInput", userInput },
             { "conversationState", conversationState.GetFormattedState() }
         };
+
+        _logger.LogInformation("Conversation state: {ConversationState}", conversationState.GetFormattedState());
 
         try
         {
@@ -115,8 +117,6 @@ Response:";
     {
         try
         {
-            Console.WriteLine($"Raw response: {response}");
-
             // Find JSON object in the response
             int startIndex = response.IndexOf('{');
             int endIndex = response.LastIndexOf('}');
