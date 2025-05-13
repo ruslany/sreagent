@@ -1,21 +1,31 @@
 using System.Text.Json;
-using Microsoft.Extensions.AI;
+using Microsoft.SemanticKernel.ChatCompletion;
 using Microsoft.Extensions.Logging;
+using Microsoft.SemanticKernel;
 
 namespace sreagent;
 
-public class CoordinatorAgent(
-    IChatClient chatClient,
-    DiagnosticAgentFactory diagnosticAgentFactory,
-    MitigationAgentFactory mitigationAgentFactory,
-    AgentMemory memory,
-    ILogger<CoordinatorAgent> logger)
+public class CoordinatorAgent
 {
-    private readonly IChatClient _chatClient = chatClient;
-    private readonly DiagnosticAgentFactory _diagnosticAgentFactory = diagnosticAgentFactory;
-    private readonly MitigationAgentFactory _mitigationAgentFactory = mitigationAgentFactory;
-    private readonly AgentMemory _memory = memory;
-    private readonly ILogger<CoordinatorAgent> _logger = logger;
+    private readonly Kernel _kernel;
+    private readonly DiagnosticAgentFactory _diagnosticAgentFactory;
+    private readonly MitigationAgentFactory _mitigationAgentFactory;
+    private readonly AgentMemory _memory;
+    private readonly ILogger<CoordinatorAgent> _logger;
+
+    public CoordinatorAgent(
+        Kernel kernel,
+        DiagnosticAgentFactory diagnosticAgentFactory,
+        MitigationAgentFactory mitigationAgentFactory,
+        AgentMemory memory,
+        ILogger<CoordinatorAgent> logger)
+    {
+        _kernel = kernel;
+        _diagnosticAgentFactory = diagnosticAgentFactory;
+        _mitigationAgentFactory = mitigationAgentFactory;
+        _memory = memory;
+        _logger = logger;
+    }
 
     public async Task<string> ProcessUserInputAsync(string userInput, ConversationState conversationState)
     {
@@ -43,66 +53,75 @@ Available diagnostic categories: networking, database, authentication, performan
 
 Response:";
 
-        var chatOptions = new ChatOptions
+        // Set execution settings
+        var executionSettings = new PromptExecutionSettings
         {
             ModelId = "gpt-4o",
-            Temperature = (float?)0.2,
-            MaxOutputTokens = 2000
+            FunctionChoiceBehavior = FunctionChoiceBehavior.None()
         };
 
-        var parameters = new Dictionary<string, string>
+        var arguments = new KernelArguments
         {
-            ["conversationState"] = conversationState.GetFormattedState(),
-            ["userInput"] = userInput
+            { "userInput", userInput },
+            { "conversationState", conversationState.GetFormattedState() }
         };
 
-        var coordinatorResponse = await _chatClient.GetResponseAsync(
-            ProcessPromptParameters(coordinatorPrompt, parameters),
-            chatOptions);
-
-        string response = coordinatorResponse.Text;
-
-        // Check if we need to route to a specialist agent
-        if (response.Contains("\"action\"") && response.Contains("\"category\""))
+        try
         {
-            try
+            // Get the chat completion
+            var result = await _kernel.InvokePromptAsync(
+                coordinatorPrompt,
+                arguments);
+
+            string response = result.ToString();
+
+            // Check if we need to route to a specialist agent
+            if (response.Contains("\"action\"") && response.Contains("\"category\""))
             {
-                var routingInfo = ExtractRoutingInfo(response);
-
-                if (routingInfo != null)
+                try
                 {
-                    string action = routingInfo.Action;
-                    string category = routingInfo.Category;
+                    var routingInfo = ExtractRoutingInfo(response);
 
-                    _logger.LogInformation("Routing to {Action} agent for {Category}", action, category);
-
-                    if (action == "diagnose")
+                    if (routingInfo != null)
                     {
-                        // Route to appropriate diagnostic agent
-                        var diagnosticAgent = _diagnosticAgentFactory.GetAgent(category);
-                        conversationState.SetCurrentPhase("diagnosis");
-                        conversationState.SetCurrentCategory(category);
+                        string action = routingInfo.Action;
+                        string category = routingInfo.Category;
 
-                        return await diagnosticAgent.DiagnoseAsync(userInput, conversationState);
-                    }
-                    else if (action == "mitigate")
-                    {
-                        // Route to appropriate mitigation agent
-                        var mitigationAgent = _mitigationAgentFactory.GetAgent(category);
-                        conversationState.SetCurrentPhase("mitigation");
+                        _logger.LogInformation("Routing to {Action} agent for {Category}", action, category);
 
-                        return await mitigationAgent.MitigateAsync(userInput, conversationState);
+                        if (action == "diagnose")
+                        {
+                            // Route to appropriate diagnostic agent
+                            var diagnosticAgent = _diagnosticAgentFactory.GetAgent(category);
+                            conversationState.SetCurrentPhase("diagnosis");
+                            conversationState.SetCurrentCategory(category);
+
+                            return await diagnosticAgent.DiagnoseAsync(userInput, conversationState);
+                        }
+                        else if (action == "mitigate")
+                        {
+                            // Route to appropriate mitigation agent
+                            var mitigationAgent = _mitigationAgentFactory.GetAgent(category);
+                            conversationState.SetCurrentPhase("mitigation");
+
+                            return await mitigationAgent.MitigateAsync(userInput, conversationState);
+                        }
                     }
                 }
+                catch (Exception ex)
+                {
+                    _logger.LogError(ex, "Error parsing routing information");
+                }
             }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "Error parsing routing information");
-            }
-        }
 
-        // If no routing is needed or if routing failed, return the coordinator response
-        return response;
+            // If no routing is needed or if routing failed, return the coordinator response
+            return response;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error getting chat completion: {ErrorMessage}", ex.Message);
+            return "I'm sorry, I encountered an error processing your request. Please try again.";
+        }
     }
 
     private RoutingInfo? ExtractRoutingInfo(string response)
@@ -132,7 +151,7 @@ Response:";
     {
         foreach (var kvp in parameters)
         {
-            prompt = prompt.Replace($"{{$kvp.Key}}", kvp.Value);
+            prompt = prompt.Replace($"{{${kvp.Key}}}", kvp.Value);
         }
         return prompt;
     }
