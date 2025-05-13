@@ -3,27 +3,18 @@ using Microsoft.Extensions.Logging;
 
 namespace sreagent;
 
-public class DiagnosticAgent
+public class DiagnosticAgent(
+    string specialization,
+    IChatClient chatClient,
+    List<ITool> tools,
+    AgentMemory memory,
+    ILogger<DiagnosticAgent> logger)
 {
-    private readonly string _specialization;
-    private readonly IChatClient _chatClient;
-    private readonly List<ITool> _tools;
-    private readonly AgentMemory _memory;
-    private readonly ILogger<DiagnosticAgent> _logger;
-
-    public DiagnosticAgent(
-        string specialization,
-        IChatClient chatClient,
-        List<ITool> tools,
-        AgentMemory memory,
-        ILogger<DiagnosticAgent> logger)
-    {
-        _specialization = specialization;
-        _chatClient = chatClient;
-        _tools = tools;
-        _memory = memory;
-        _logger = logger;
-    }
+    private readonly string _specialization = specialization;
+    private readonly IChatClient _chatClient = chatClient;
+    private readonly List<ITool> _tools = tools;
+    private readonly AgentMemory _memory = memory;
+    private readonly ILogger<DiagnosticAgent> _logger = logger;
 
     public async Task<string> DiagnoseAsync(string userInput, ConversationState conversationState)
     {
@@ -39,11 +30,11 @@ public class DiagnosticAgent
         // Build the specialized prompt
         string prompt = GetSpecializedPrompt(patternsText, toolsText);
 
-        var promptOptions = new PromptExecutionOptions
+        var chatOptions = new ChatOptions
         {
-            Model = "gpt-4-turbo",
-            Temperature = 0.2,
-            MaxTokens = 1500
+            ModelId = "gpt-4o",
+            Temperature = (float?)0.2,
+            MaxOutputTokens = 1500
         };
 
         var parameters = new Dictionary<string, string>
@@ -54,12 +45,11 @@ public class DiagnosticAgent
         };
 
         // First pass: determine if we need to use any tools
-        var initialResponse = await _promptService.ExecutePromptAsync(
+        var initialResponse = await _chatClient.GetResponseAsync(
             prompt,
-            parameters,
-            promptOptions);
+            chatOptions);
 
-        string response = initialResponse.Completion;
+        string response = initialResponse.Text;
 
         // Check if the agent wants to use a tool
         if (response.Contains("USE_TOOL:"))

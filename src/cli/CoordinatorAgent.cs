@@ -43,7 +43,7 @@ Available diagnostic categories: networking, database, authentication, performan
 
 Response:";
 
-        var promptOptions = new ChatOptions
+        var chatOptions = new ChatOptions
         {
             ModelId = "gpt-4o",
             Temperature = (float?)0.2,
@@ -58,7 +58,7 @@ Response:";
 
         var coordinatorResponse = await _chatClient.GetResponseAsync(
             ProcessPromptParameters(coordinatorPrompt, parameters),
-            promptOptions);
+            chatOptions);
 
         string response = coordinatorResponse.Text;
 

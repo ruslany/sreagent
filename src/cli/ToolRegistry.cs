@@ -1,4 +1,6 @@
- public class ToolRegistry
+using Microsoft.Extensions.Logging;
+
+public class ToolRegistry
    {
        private readonly IServiceProvider _serviceProvider;
        private readonly ILogger<ToolRegistry> _logger;
