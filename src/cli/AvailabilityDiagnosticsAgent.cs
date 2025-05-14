@@ -15,7 +15,7 @@ public class AvailabilityDiagnosticAgent : DiagnosticAgent
         : base(logger)
     {        
         _kernel = kernelBuilder.Build();
-        _kernel.Plugins.AddFromObject(acaAvailabilityPluginDefinition);
+        _kernel.Plugins.AddFromObject(acaAvailabilityPluginDefinition, "availability");
     }
 
     public override Kernel KernelWithTools => _kernel;

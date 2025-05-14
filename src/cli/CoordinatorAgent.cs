@@ -28,12 +28,11 @@ public class CoordinatorAgent
 
         // Determine the next action using the coordinator prompt
         var coordinatorPrompt = """
-<message role="system">        
+<message role="system">
 You are a coordinator for an Azure Container Apps SRE agent. Your job is to:
 1. Understand the user's problem with their Azur Container app
 2. Determine which specialized diagnostic agent to use
-3. Gather required information from the user
-4. Route the conversation to the appropriate specialist agent
+3. Route the conversation to the appropriate specialist agent
 
 Current conversation state:
 {{$conversationState}}

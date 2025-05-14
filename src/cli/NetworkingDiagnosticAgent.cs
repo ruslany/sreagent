@@ -15,7 +15,7 @@ public class NetworkingDiagnosticAgent : DiagnosticAgent
         : base(logger)
     {
         _kernel = kernelBuilder.Build();
-        _kernel.Plugins.AddFromObject(nsgRulePluginDefinition);
+        _kernel.Plugins.AddFromObject(nsgRulePluginDefinition, "networking");
     }
 
     public override Kernel KernelWithTools => _kernel;
@@ -30,9 +30,6 @@ You are a specialized Azure networking diagnostic agent. Your job is to diagnose
 
 Current conversation state:
 {{$conversationState}}
-
-Common Azure networking troubleshooting patterns:
-{{$patterns}}
 
 Focus on these common networking issues:
 1. NSG rules blocking traffic

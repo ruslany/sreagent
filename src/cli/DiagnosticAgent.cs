@@ -21,7 +21,7 @@ public abstract class DiagnosticAgent
 
     public async Task<string> DiagnoseAsync(string userInput, ConversationState conversationState)
     {
-        _logger.LogInformation("Starting diagnosis for user input: {UserInput}", userInput);
+        _logger.LogInformation("Diagnosting agent for {Specialization} Starting diagnosis for user input: {UserInput}", Specialization, userInput);
 
         // Build the specialized prompt
         string prompt = GetSpecializedPrompt();

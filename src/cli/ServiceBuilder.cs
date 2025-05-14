@@ -42,7 +42,7 @@ public static class ServicBuilder
 
             var kernelBuilder = Kernel.CreateBuilder();
             kernelBuilder.Services.AddLogging(configure => configure.AddConsole());
-            kernelBuilder.Services.AddLogging(configure => configure.SetMinimumLevel(LogLevel.Information));
+            kernelBuilder.Services.AddLogging(configure => configure.SetMinimumLevel(LogLevel.Warning));
 
             kernelBuilder.AddAzureOpenAIChatCompletion(
                 deploymentName: settings.DeploymentName,
